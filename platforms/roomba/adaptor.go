@@ -14,6 +14,7 @@ type Adaptor struct {
 }
 
 // NewAdaptor constructs a new roomba adapter
+// TODO: accept better types for ports (allow arduino pins or com ports etc...)
 func NewAdaptor(name string, port string) *Adaptor {
 	return &Adaptor{
 		name: name,
@@ -51,11 +52,4 @@ func (r *Adaptor) Finalize() (errs []error) {
 		r.sp = nil
 	}
 	return errs
-}
-
-func push(e *[]error, err error) []error {
-	if err != nil {
-		*e = append(*e, err)
-	}
-	return *e
 }
