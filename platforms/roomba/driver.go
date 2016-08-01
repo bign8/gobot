@@ -4,16 +4,25 @@ import "github.com/hybridgroup/gobot"
 
 // Driver describes a roomba driver for gobot
 type Driver struct {
+	gobot.Eventer
+	gobot.Commander
 	name string
 	adap *Adaptor
 }
 
 // NewDriver constructs a new gobot driver for a roomba
 func NewDriver(a *Adaptor, name string) *Driver {
-	return &Driver{
-		name: name,
-		adap: a,
+	d := &Driver{
+		Eventer:   gobot.NewEventer(),
+		Commander: gobot.NewCommander(),
+		name:      name,
+		adap:      a,
 	}
+
+	// TODO: add all possible events
+	// TODO: add all pottible commands
+
+	return d
 }
 
 // Name sreturns the label for the Driver
