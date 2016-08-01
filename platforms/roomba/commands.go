@@ -63,7 +63,8 @@ func (r *Driver) Baud(baudCode uint8) []error {
 	return r.write(129, baudCode)
 }
 
-// Note (130): The effect and usage of the Control command (130) are identical to the Safe command.
+// Note (130): The effect and usage of the Control command (130) are identical
+// to the Safe command.
 
 // Safe puts the OI into Safe mode, enabling user control of Roomba. It turns
 // off all LEDs. The OI can be in Passive, Safe, or Full mode to accept this
@@ -98,10 +99,11 @@ func (r *Driver) Clean() []error {
 	return r.write(135)
 }
 
-// Demo allows you to run one of the preset demo programs.
-func (r *Driver) Demo(num uint8) []error {
-	// TODO: validate input
-	return r.write(136, num)
+// Max starts the Max cleaning mode.
+//
+// Note: some documentation show this as a DEMO command (RESEARCH)
+func (r *Driver) Max() []error {
+	return r.write(136)
 }
 
 // Drive controls Roomba’s drive wheels. It takes four data bytes, interpreted
@@ -116,8 +118,27 @@ func (r *Driver) Demo(num uint8) []error {
 // turn toward the right. Special cases for the radius make Roomba turn in place
 // or drive straight, as specified below. A negative velocity makes Roomba drive
 // backward.
-func (r *Driver) Drive(velocity int16, radius int16) []error {
-	// TODO: validate input
+//
+// Note: Internal and environmental restrictions may prevent Roomba from
+// accurately carrying out some drive commands. For example, it may not be
+// possible for Roomba to drive at full speed in an arc with a large radius of
+// curvature.
+//
+// Radius Special Cases
+// - Straight = -32768 or 32767 = hex 8000 or 7FFF
+// - Turn in place clockwise = -1
+// - Turn in place counter-clockwise = 1
+//
+func (r *Driver) Drive(velocity int16, radius int16) (errs []error) {
+	if velocity < -500 || velocity > 500 {
+		errs = append(errs, fmt.Errorf("Invalid Velocity: %d", velocity))
+	}
+	if (radius < -2000 || radius > 2000) && radius != -32768 && radius != 32767 {
+		errs = append(errs, fmt.Errorf("Invalid Radius: %d", radius))
+	}
+	if errs != nil {
+		return errs
+	}
 	return r.write(137,
 		uint8((velocity>>8)&0xFF),
 		uint8((velocity>>0)&0xFF),
@@ -131,9 +152,23 @@ func (r *Driver) Drive(velocity int16, radius int16) []error {
 // controlled with this command, all motors will run at maximum speed when
 // enabled. The main brush and side brush can be run in either direction. The
 // vacuum only runs forward.
+//
+// Serial Sequence: [138] [Motors]
+//
+// Motors is set in the following method
+//  *-------*-----*-----*-----*-----*-----*-----*-----*-----*
+//  |  Bit  |  7  |  6  |  5  |  4  |  3  |  2  |  1  |  0  |
+//  *-------*-----*-----*-----*-----*-----*-----*-----*-----*
+//  | Value | n/a | n/a | n/a | MBD | SBC |  MB |  V  |  SB |
+//  *-------*-----*-----*-----*-----*-----*-----*-----*-----*
+//
+//  - MBD - Main Brush Direction
+//  - SBC - Side Brush clockwise
+//  - MB - Main Brush
+//  - V - Vacuum
+//  - SB - Side Brush
 func (r *Driver) Motors(mainBrushDirection bool, sideBrushClockwise bool, mainBrush bool, vacuum bool, sideBrush bool) []error {
 	var motorbits uint8 = 0x00
-	// TODO: documentation references 7 output bits, verify this
 	args := []bool{sideBrush, vacuum, mainBrush, sideBrushClockwise, mainBrushDirection}
 	for i, v := range args {
 		if v {
@@ -146,6 +181,15 @@ func (r *Driver) Motors(mainBrushDirection bool, sideBrushClockwise bool, mainBr
 // LEDs ontrols the LEDs common to all models of Roomba 500. The Clean/Power LED
 // is specified by two data bytes: one for the color and the other for the
 // intensity.
+//
+// Serial Sequence: [139] [LED Bits] [Clean/Power Color] [Clean/Power Intensity]
+//
+// LED Bits is defined as follows
+//  *-------*-----*-----*-----*-----*-------------*------*------*--------*
+//  |  Bit  |  7  |  6  |  5  |  4  |      3      |   2  |   1  |    0   |
+//  *-------*-----*-----*-----*-----*-------------*------*------*--------*
+//  | Value | n/a | n/a | n/a | n/a | Check Robot | Dock | Spot | Debris |
+//  *-------*-----*-----*-----*-----*-------------*------*------*--------*
 func (r *Driver) LEDs(checkRobot bool, dock bool, spot bool, debris bool, cleanPowerColor uint8, cleanPowerIntensity uint8) []error {
 	var ledbits uint8 = 0x00
 	args := []bool{debris, spot, dock, checkRobot}
@@ -195,7 +239,7 @@ func (r *Driver) SeekDock() []error {
 	return r.write(143)
 }
 
-// PwmMotors lets you control the speed of Roomba’s main brush, side brush, and
+// PWMMotors lets you control the speed of Roomba’s main brush, side brush, and
 // vacuum independently. With each data byte, you specify the duty cycle for the
 // low side driver (max 128). For example, if you want to control a motor with
 // 25% of battery voltage, choose a duty cycle of 128 * 25% = 32. The main brush
@@ -203,9 +247,13 @@ func (r *Driver) SeekDock() []error {
 // Positive speeds turn the motor in its default (cleaning) direction. Default
 // direction for the side brush is counterclockwise. Default direction for the
 // main brush/flapper is inward.
-func (r *Driver) PwmMotors(mainBrushPwm int8, sideBrushPwm int8, vacuumPwm uint8) []error {
-	// TODO: validate input
-	return r.write(144, uint8(mainBrushPwm), uint8(sideBrushPwm), uint8(vacuumPwm))
+//
+// Serial sequence: [144] [Main Brush PWM] [Side Bruch PWM] [Vaccuum PWM]
+func (r *Driver) PWMMotors(mainBrushPWM int8, sideBrushPWM int8, vacuumPWM uint8) []error {
+	if vacuumPWM > 127 {
+		return []error{fmt.Errorf("Invalid vaccumPWM: %d", vacuumPWM)}
+	}
+	return r.write(144, uint8(mainBrushPWM), uint8(sideBrushPWM), uint8(vacuumPWM))
 }
 
 // DriveDirect lets you control the forward and backward motion of Roomba’s
@@ -215,7 +263,16 @@ func (r *Driver) PwmMotors(mainBrushPwm int8, sideBrushPwm int8, vacuumPwm uint8
 // with the high byte sent first. The next two bytes specify the velocity of the
 // left wheel, in the same format. A positive velocity makes that wheel drive
 // forward, while a negative velocity makes it drive backward.
-func (r *Driver) DriveDirect(rightVelocity int16, leftVelocity int16) []error {
+func (r *Driver) DriveDirect(rightVelocity int16, leftVelocity int16) (errs []error) {
+	if rightVelocity < -500 || rightVelocity > 500 {
+		errs = append(errs, fmt.Errorf("Invalid rightVelocity: %d", rightVelocity))
+	}
+	if leftVelocity < -500 || leftVelocity > 500 {
+		errs = append(errs, fmt.Errorf("Invalid leftVelocity: %d", leftVelocity))
+	}
+	if errs != nil {
+		return errs
+	}
 	return r.write(145,
 		uint8((rightVelocity>>8)&0xFF),
 		uint8((rightVelocity>>0)&0xFF),
@@ -224,19 +281,28 @@ func (r *Driver) DriveDirect(rightVelocity int16, leftVelocity int16) []error {
 	)
 }
 
-// DrivePwm lets you control the raw forward and backward motion of Roomba’s
+// DrivePWM lets you control the raw forward and backward motion of Roomba’s
 // drive wheels independently. It takes four data bytes, which are interpreted
 // as two 16-bit signed values using two’s complement. The first two bytes
 // specify the PWM of the right wheel, with the high byte sent first. The next
 // two bytes specify the PWM of the left wheel, in the same format. A positive
 // PWM makes that wheel drive forward, while a negative PWM makes it drive
 // backward.
-func (r *Driver) DrivePwm(rightPwm int16, leftPwm int16) []error {
+func (r *Driver) DrivePWM(rightPWM int16, leftPWM int16) (errs []error) {
+	if rightPWM < -255 || rightPWM > 255 {
+		errs = append(errs, fmt.Errorf("Invalid rightPWM: %d", rightPWM))
+	}
+	if leftPWM < -255 || rightPWM > 255 {
+		errs = append(errs, fmt.Errorf("Invalid leftPWM: %d", leftPWM))
+	}
+	if errs != nil {
+		return errs
+	}
 	return r.write(146,
-		uint8((rightPwm>>8)&0xFF),
-		uint8((rightPwm>>0)&0xFF),
-		uint8((leftPwm>>8)&0xFF),
-		uint8((leftPwm>>0)&0xFF),
+		uint8((rightPWM>>8)&0xFF),
+		uint8((rightPWM>>0)&0xFF),
+		uint8((leftPWM>>8)&0xFF),
+		uint8((leftPWM>>0)&0xFF),
 	)
 }
 
@@ -346,29 +412,41 @@ func (r *Driver) Buttons(clock bool, schedule bool, day bool, hour bool, dock bo
 }
 
 // TODO: 166 not in any documentation
-// TODO: these remaining functions existed in past implementation but have no associated documentation.
-// // days[0] = sun ... days[6] = sat
-// func (r *Driver) Schedule(days [7]time.Time) {
-// 	var daybits uint8 = 0x00
-// 	daybytes := []uint8{} // TODO: pre-allocate this space
+
+// Schedule sends Roomba a new schedule.
 //
-// 	for i, day := range days {
-// 		if !day.IsZero() {
-// 			daybits |= 0x01 << uint8(i)
-// 		}
-// 		daybytes = append(daybytes, uint8(day.Hour()), uint8(day.Minute()))
-// 	}
+// days[0] = sun ... days[6] = sat
 //
-// 	r.sender(167, append([]uint8{daybits}, daybytes...))
-// }
+// Uses 15 data bytes:
+//  [Days] [Sun Hour] [Sun Minute] [Mon Hour] [Mon Minute]
+//         [Tue Hour] [Tue Minute] [Wed Hour] [Wed Minute]
+//         [Thu Hour] [Thu Minute] [Fri Hour] [Fri Minute]
+//         [Sat Hour] [Sat Minute]
 //
-// func (r *Driver) DisableSchedule() {
-// 	r.sender(167, []uint8{
-// 		0x00, 0x00, 0x00, 0x00, 0x00,
-// 		0x00, 0x00, 0x00, 0x00, 0x00,
-// 		0x00, 0x00, 0x00, 0x00, 0x00,
-// 	})
-// }
+// Days bit is setup in the following format
+//  *-------*-----*-----*-----*-----*-----*-----*-----*-----*
+//  |  Bit  |  7  |  6  |  5  |  4  |  3  |  2  |  1  |  0  |
+//  *-------*-----*-----*-----*-----*-----*-----*-----*-----*
+//  | Value | n/a | Sat | Fri | Thu | Wed | Tue | Mon | Sun |
+//  *-------*-----*-----*-----*-----*-----*-----*-----*-----*
+//
+func (r *Driver) Schedule(days [7]time.Time) []error {
+	var daybits uint8 = 0x00
+	daybytes := []uint8{} // TODO: pre-allocate this space
+	for i, day := range days {
+		if !day.IsZero() {
+			daybits |= 0x01 << uint8(i)
+		}
+		daybytes = append(daybytes, uint8(day.Hour()), uint8(day.Minute()))
+	}
+	return r.write(167, append([]uint8{daybits}, daybytes...)...)
+}
+
+// DisableSchedule disables scheduled cleaning, by sending all 0s.
+func (r *Driver) DisableSchedule() []error {
+	var days [7]time.Time
+	return r.Schedule(days)
+}
 
 // SetDateTime sets Roomba’s clock.
 func (r *Driver) SetDateTime(dateTime time.Time) []error {
