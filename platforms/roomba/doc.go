@@ -6,6 +6,9 @@ https://github.com/hybridgroup/gobot/blob/master/platforms/roomba/README.md
 */
 package roomba
 
+// BAUD defines the default BAUD rate the roomba communicates with
+const BAUD = 115200
+
 func push(e *[]error, err error) []error {
 	if e == nil {
 		if err != nil {
